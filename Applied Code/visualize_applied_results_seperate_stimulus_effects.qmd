@@ -1,0 +1,289 @@
+---
+title: "Visualize Applied Results"
+format: html
+editor: visual
+---
+
+## Visualize Applied Results
+
+```{r}
+library(tidyverse)
+```
+
+```{r}
+plot_df <- function (df) 
+{
+  df %>% mutate(t = 1:dim(df)[1]) %>% reshape2::melt(id.vars = "t") %>% 
+    ggplot() + geom_line(aes(x = t, y = value, color = variable))
+}
+```
+
+```{r}
+load("~/BTV-PPI/Applied Results/processed_data/sep_learned_subject_1.RData")
+roi_names <- model_data$roi_names
+rm(model_data)
+
+result <- vector(mode = "list", length = 8)
+for(sub in 1:8){
+  load(sprintf("~/BTV-PPI/Applied Results/separate_stimulus_effects/subject_%s_median.RData", sub))
+  result[[sub]] <- par_cor_hat
+}
+rm(par_cor_hat)
+```
+
+Below is a breakdown of the partial correlation between the Left and Right Anterior Cingulate Cortexes.
+
+```{r}
+plot_pc <- function(sub, roi1, roi2){
+  N <- dim(result[[sub]][[1]])[3]
+  
+  sapply(1:5, function(k){
+    result[[sub]][[k]][roi1, roi2, ]
+  }) %>% 
+    data.frame() %>% 
+    mutate(t = 1:N) %>% 
+    reshape2::melt(id.vars = "t") %>% 
+    ggplot() +
+    geom_line(aes(x = t, y = value, color = variable)) +
+    scale_color_manual(labels = c("Background","Picture Shown",
+                               "Button Pressed","Slow Entropy",
+                               "Fast Entropy"),
+                     values = c(1:5)) +
+    ggtitle(sprintf("Partial Correlation between %s and %s \n Subject %s", roi_names[roi1], roi_names[roi2], sub)) +
+    coord_cartesian(ylim = c(-1,1))
+    
+}
+
+plot_pc(1, 1, 10)
+```
+
+This is good because it shows that there is just dynamic background connectivity, there is no additional partial correlation (or at least very minor) from the stimulus effects. This should also be the case between other equivalent brain structures from the left and right.
+
+Below is for the Left and Right Caudate.
+
+```{r}
+plot_pc(1, 1, 4)
+
+lapply(1:9, function(i){
+  plot_pc(1, i, (i+9))
+})
+
+lapply(1:9, function(i){
+  plot_pc(1, 4, i)
+})
+
+lapply(1:9, function(i){
+  plot_pc(1, 1, i)
+})
+```
+
+OK, well that is unexpected. There is some pretty stable background functional connectivity between the left and right caudate but there is some sort of PPI effect for just slow entropy. Over the course of the experiment the partial correlation between the two regions increases
+
+```{r}
+plot_pc(1, 1, 7)
+```
+
+Now I want to see if these patterns of partial correlation are consistent across subjects.
+
+```{r}
+lapply(1:8, function(sub){
+  plot_pc(sub, 2, 11)
+})
+```
+
+It's not really a consistent pattern. It seems like the partial correlation between the left and right caudate is about 0.5 for most of the subjects and it doesn't seem to depend on the stimulus. I don't know why Slow Entropy gets involved but when all the partial correlations are added together they equal about the same amount.
+
+```{r}
+plot_total_pc <- function(roi1, roi2){
+  N <- dim(result[[sub]][[1]])[3]
+  
+  lapply(1:8, function(sub){
+    temp <- lapply(1:5, function(k){
+      result[[sub]][[k]][roi1, roi2, ]
+    }) %>% Reduce("+", .) %>% 
+      data.frame(pc = .)
+    mutate(temp, t = 1:nrow(temp), subject = as.factor(sub))
+  }) %>% Reduce("rbind", .) %>% 
+    ggplot() +
+    geom_line(aes(x = t, y = pc, color = subject)) +
+    coord_cartesian(ylim = c(-1,1)) +
+    ggtitle(sprintf("Partial correlation between regions %s and %s", roi_names[roi1], roi_names[roi2]) )
+}
+
+lapply(2:18, function(i){
+  plot_total_pc(1, i)
+})
+```
+
+```{r}
+lapply(3:18, function(i){
+  plot_total_pc(2, i)
+})
+```
+
+```{r}
+lapply(4:18, function(i){
+  plot_total_pc(3, i)
+})
+```
+
+```{r}
+lapply(5:18, function(i){
+  plot_total_pc(4, i)
+})
+```
+
+```{r}
+lapply(6:18, function(i){
+  plot_total_pc(5, i)
+})
+```
+
+```{r}
+lapply(8:18, function(i){
+  plot_total_pc(7, i)
+})
+```
+
+```{r}
+lapply(9:18, function(i){
+  plot_total_pc(8, i)
+})
+```
+
+```{r}
+lapply(10:18, function(i){
+  plot_total_pc(9, i)
+})
+```
+
+```{r}
+lapply(11:18, function(i){
+  plot_total_pc(10, i)
+})
+```
+
+I think the Right Anterior Cingulate Cortex and Right Caudate have something interesting going on.
+
+```{r}
+plot_pieces_pc <- function(roi1, roi2){
+  stim_names = c("Background", "Image Shown", "Button Pressed", "Slow Entropy", "Fast Entropy")
+  
+  lapply(1:5, function(stim){
+  lapply(1:8, function(sub){
+    temp <- result[[sub]][[stim]][roi1, roi2,] %>% data.frame(pc = .)
+    temp <- mutate(temp, t = 1:nrow(temp), subject = as.factor(sub))
+  }) %>% 
+    Reduce("rbind", .) %>% 
+    ggplot() +
+    geom_line(aes(x = t, y = pc, color = subject)) +
+    coord_cartesian(ylim = c(-1,1)) +
+      ggtitle(sprintf("Partial Correlation between %s and %s \n due to %s", 
+                      roi_names[roi1], roi_names[roi2], stim_names[stim]))
+  })
+}
+
+plot_pieces_pc(10, 11)
+```
+
+If I were to believe this, it seems like the R_ACC and R_Caudate are have background connectivity, and it fluctuates for one subject. For many of the subject there's a change in partial correlation due to the button press and there is a slight contribution from slow entropy.
+
+```{r}
+gg_color_hue <- function(n) {
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+}
+
+sub <- 6
+roi1 <- 4
+roi2 <- 13
+
+N <- dim(result[[sub]][[1]])[3]
+
+temp <- lapply(1:5, function(k){
+  result[[sub]][[k]][roi1, roi2, ]
+  }) %>% 
+  Reduce("+", .) %>% 
+  data.frame(pc = ., t = 1:N, subject = as.factor(sub))
+
+ggplot(temp) +
+  geom_line(aes(x = t, y = pc, color = subject )) +
+  scale_color_manual(breaks = as.factor(sub), 
+                     values = gg_color_hue(8)[sub]) +
+  coord_cartesian(ylim = c(-1,1)) +
+ggtitle("Partial Correlation Between Left and Right Hippocampus") +
+  ylab("Partial Correlation")
+
+
+
+plot_total_pc(roi1 = 4, roi2 = 13) +
+  ggtitle("Partial Correlation Between Left and Right Hippocampus") +
+  ylab("Partial Correlation")
+```
+
+## Paper figures
+
+Make a plot for the left and right anterior cingulate cortex regions.
+
+```{r}
+plot_pc(1, 1, 10) +
+  ggtitle("Partial Correlation between Left and Right Anterior Cingulate Cortex\nSubject 1") +
+  theme_minimal() +
+  labs(y = "Partial Correlation", color = "Component")
+
+ggsave(filename = "images/Fluctuating_background.png", width = 8, height = 4)
+```
+
+```{r}
+plot_pc(1, 4, 13) +
+  ggtitle("Partial Correlation between Left and Right Hippocampus\nSubject 1") +
+  theme_minimal() +
+  labs(y = "Partial Correlation", color = "Component")
+
+ggsave(filename = "images/Constant_background.png", width = 8, height = 4)
+```
+
+```{r}
+plot_pc(1, 4, 13) +
+  ggtitle("Partial Correlation between Left and Right Hippocampus\nSubject 1") +
+  theme_minimal() +
+  labs(y = "Partial Correlation", color = "Component")
+
+ggsave(filename = "images/Constant_background.png", width = 8, height = 4)
+```
+
+```{r}
+plot_pc(1, 2, 11) +
+  ggtitle("Partial Correlation between Left and Right Caudate\nSubject 1") +
+  theme_minimal() +
+  labs(y = "Partial Correlation", color = "Component")
+
+ggsave(filename = "images/Slow_entropy_PPI.png", width = 8, height = 4)
+```
+
+```{r}
+plot_pc(1, 4, 7) +
+  ggtitle("Partial Correlation between Left Hippocampus and Left Nucleus Accumbens\nSubject 1") +
+  theme_minimal() +
+  labs(y = "Partial Correlation", color = "Component")
+
+ggsave(filename = "images/Button_PPI.png", width = 8, height = 4)
+```
+
+```{r}
+plot_pc(1, 1, 2) +
+  ggtitle("Partial Correlation between Left Anterior Cingulate Cortex and Left Caudate\nSubject 1") +
+  theme_minimal() +
+  labs(y = "Partial Correlation", color = "Component")
+
+ggsave(filename = "images/No_pc.png", width = 8, height = 4)
+```
+
+```{r}
+lapply(1:8, function(i){
+  plot_pc(i, 4, 7) +
+  ggtitle("Partial Correlation between Left Hippocampus and Left Nucleus Accumbens\nSubject 1") +
+  theme_minimal() +
+  labs(y = "Partial Correlation", color = "Component")
+})
+```

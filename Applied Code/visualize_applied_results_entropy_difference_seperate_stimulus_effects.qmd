@@ -1,0 +1,62 @@
+---
+title: "Visualize Applied Results Entropy Difference Separate Stimulus Effects"
+format: html
+editor: visual
+---
+
+## Visualize Applied Results with Entropy Difference and Separate Stimulus Effects
+
+I'm visualizing the results from fitting the model with 9 regions (the lateral regions have been combined into a single region, so left and right hippocampus are now just hippocampus) and with 2 stimuli: entropy difference and self-self transitions.
+
+```{r}
+library(tidyverse)
+```
+
+```{r}
+plot_df <- function (df) 
+{
+  df %>% mutate(t = 1:dim(df)[1]) %>% reshape2::melt(id.vars = "t") %>% 
+    ggplot() + geom_line(aes(x = t, y = value, color = variable))
+}
+
+roi_names <- c("Anterior Cingulate Cortex", "Caudate", "Fusiform Gyrus", "Hippocampus",
+               "Lateral Occipital Cortex", "Lingual Gyrus", "Nucleus Accumbens",
+               "Parahippocampal Cortex", "Putamen")
+
+gg_color_hue <- function(n) {
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+}
+
+fir_convolve <- function(impulse_times, impulse_strengths, output_times){
+  hrf_function <- function(t){
+    if(t <= 0 || t >= 60){return(0)}
+    (t^(5)*exp(-t)/gamma(6) - t^(15)*exp(-t)/gamma(16)/6)
+  }
+  
+  #for each impulse, figure out what it's strength is at each of the output_times
+  lapply(1:length(impulse_times), function(n){
+    sapply(output_times, function(t2){
+      impulse_strengths[n] * hrf_function(t2 - impulse_times[n])
+    })
+  }) %>% Reduce("+", .)
+}
+```
+
+```{r}
+load("~/BTV-PPI/Applied Results/entropy_difference/subject_1_entropy_difference_separate_stimulus_effects.RData")
+
+n_samples <- 250
+
+result$par_cor_hat[[1]][1,2,,n_samples] %>% data.frame(background_pc = .) %>% plot_df()
+
+lapply(1:9, function(i){
+  result$par_cor_hat[[1]][9,i,,] %>% 
+  apply(., MARGIN = 1, FUN = median) %>% 
+  data.frame(background_pc = .) %>% 
+  plot_df() +
+  coord_cartesian(ylim = c(-1,1))
+})
+```
+
+This doesn't look good. I don't think any of the region pairs have any interesting patterns. I think combining regions did something funny. Before the regions were combined, for instance, the left and right hippocampal regions were strongly correlated, so if you found the partial correlation between the left ACC and the left Hippocampus, it would control for the right Hippocampus, which I think

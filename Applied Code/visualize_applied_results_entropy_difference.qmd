@@ -1,0 +1,149 @@
+---
+title: "Visualize Applied Results - Entropy Difference"
+format: html
+editor: visual
+---
+
+## Visualize Applied Results - Entropy Difference
+
+```{r}
+library(tidyverse)
+```
+
+```{r}
+plot_df <- function (df) 
+{
+  df %>% mutate(t = 1:dim(df)[1]) %>% reshape2::melt(id.vars = "t") %>% 
+    ggplot() + geom_line(aes(x = t, y = value, color = variable))
+}
+
+fir_convolve <- function(impulse_times, impulse_strengths, output_times){
+  hrf_function <- function(t){
+    if(t <= 0 || t >= 60){return(0)}
+    (t^(5)*exp(-t)/gamma(6) - t^(15)*exp(-t)/gamma(16)/6)
+  }
+  
+  #for each impulse, figure out what it's strength is at each of the output_times
+  lapply(1:length(impulse_times), function(n){
+    sapply(output_times, function(t2){
+      impulse_strengths[n] * hrf_function(t2 - impulse_times[n])
+    })
+  }) %>% Reduce("+", .)
+}
+
+gg_color_hue <- function(n) {
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+}
+```
+
+```{r}
+roi_names <- c("Anterior Cingulate Cortex", "Caudate", "Fusiform Gyrus", "Hippocampus",
+               "Lateral Occipital Cortex", "Lingual Gyrus", "Nucleus Accumbens",
+               "Parahippocampal Cortex", "Putamen")
+
+K <- 2
+
+temp <- vector(mode = "list", length = 8)
+S <- lapply(1:8, function(sub){vector(mode = "list", length = K)})
+
+for(sub in 1:8){
+  load(sprintf("~/BTV-PPI/Applied Results/entropy_difference/subject_%s_entropy_difference.RData", sub))
+  temp[[sub]] <- result$par_cor_hat
+  
+  load(sprintf("~/BTV-PPI/Applied Results/processed_data/sep_learned_subject_%s.RData", sub))
+  load(sprintf("~/BTV-PPI/Applied Results/processed_data/behavior_subject_%s.Rdata", sub))
+  
+  temp1 <- data.frame(scan_times = model_data$scan_times)
+  temp2 <- sqldf("select coalesce(lag(time) over (order by time), 0) as start_time,
+        time as end_time, entropy_difference, self_self from behavior")
+  
+  entropy_difference <- sqldf("select scan_times, start_time, end_time, coalesce(entropy_difference, 0) as entropy_difference from temp1
+        left join temp2 on (scan_times >= start_time and scan_times < end_time) ")$entropy_difference
+  
+  S[[sub]][[1]] <- fir_convolve(impulse_times = model_data$scan_times,
+                         impulse_strengths = entropy_difference,
+                         output_times = model_data$scan_times)
+  
+  ##second predictor is self-self transitions
+  S[[sub]][[2]] <- fir_convolve(impulse_times = behavior$time,
+                         impulse_strengths = behavior$self_self,
+                         output_times = model_data$scan_times)
+  
+  rm(entropy_difference, temp1, temp2, behavior, model_data)
+}
+rm(result)
+result <- temp
+rm(temp, sub)
+```
+
+Now see what the partial correlation is between regions for the different subjects.
+
+```{r}
+plot_pc_over_time <- function(roi1, roi2){
+  lapply(1:8, function(sub){
+    N <- dim(result[[sub]])[3]
+    sapply(1:N, function(t){
+      median(result[[sub]][roi1, roi2, t,])
+    }) %>% 
+    data.frame(subject = as.factor(sub), pc = ., t = 1:N)
+  }) %>% 
+  Reduce("rbind", .) %>% 
+  ggplot() +
+    geom_line(aes(x = t, y = pc, color = subject)) +
+    ggtitle(sprintf("Partial Correlation between %s and %s", roi_names[roi1], roi_names[roi2]))
+}
+
+lapply(2:9, function(p){
+  plot_pc_over_time(roi1 = 1, roi2 = p)
+})
+```
+
+The above partial correlations look really messy and don't seem to tell a clear pattern at all across subjects. However, maybe that's because the difference between slow and fast entropy is pretty variables. This might be showing exactly what I want: stronger partial correlation when (convolved) difference in entropy is high. I think I can show that by either having convolved entropy difference on the X axis and partial correlation on the Y axis, so splitting the sources of partial correlation. I'm going to try to do it the first way.
+
+```{r}
+plot_pc_over_entropy_diff <- function(sub, roi1, roi2){
+  N <- dim(result[[sub]])[3]
+  sapply(1:N, function(t){
+      median(result[[sub]][roi1, roi2, t,])
+    }) %>% 
+    data.frame(subject = as.factor(sub), pc = ., 
+               entropy_diff = S[[sub]][[1]], t = 1:N) %>% 
+    ggplot() +
+      geom_point(aes(x = entropy_diff, y = pc, color = subject), alpha = 0.5) +
+      scale_color_manual(breaks = sub,
+                         values = gg_color_hue(8)[sub]) +
+    coord_cartesian(ylim = c(-1,1)) +
+    ggtitle(sprintf("Partial Correlation between
+                    %s and %s", roi_names[roi1], roi_names[roi2])) +
+    ylab("Partial Correlation") +
+    xlab("Entropy Difference")
+}
+
+plot_pc_over_entropy_diff(sub = 3, roi = 1, roi2 = 4)
+
+lapply(1:8, function(sub){
+  plot_pc_over_entropy_diff(sub = sub, roi = 1, roi2 = 9)
+})
+```
+
+I was hoping the partial correlation between the Putamen (associated with fast learning) and Anterior Cingulate Cortex would increase as the difference between the slow and fast entropies increased, but that's not really what I'm seeing.
+
+Below, I try to see if there's any evidence that the posterior samples have not converged...
+
+```{r}
+lapply(1:250, function(i){
+  result[[5]][2,1,,i]
+}) %>% Reduce("cbind", .) %>% 
+  data.frame(pc = .) %>% 
+  plot_df() +
+  theme(legend.position = "None") +
+  ggtitle("Posterior Samples of Partial Correlation")
+
+sapply(1:250, function(i){
+  result[[5]][2,1,1,i]
+}) %>% data.frame(pc = .) %>% plot_df() +
+  ggtitle("Posterior Samples of t=1")
+```
+
+I think the first partial correlation value looks like a fuzzy caterpillar, so I think the posterior samples have converged on their true posterior distribution. I think the remaining thing to do is perform selection on the posterior samples, make the remaining partial correlations symmetric and report my results.

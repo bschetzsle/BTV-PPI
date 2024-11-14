@@ -1,0 +1,497 @@
+---
+title: "Plot Simulation Results"
+format: html
+editor: visual
+---
+
+## Plot the results of the simulations
+
+```{r}
+library(tidyverse)
+library(latex2exp)
+
+plot_df <- function (df) 
+{
+  df %>% mutate(t = 1:dim(df)[1]) %>% reshape2::melt(id.vars = "t") %>% 
+    ggplot() + geom_line(aes(x = t, y = value, color = variable))
+}
+```
+
+Figure 1
+
+```{r}
+N <- 100
+P <- 2
+
+s <- rep(c(0,1), each=N/4, length.out = N)
+
+Omega <- array(1, dim = c(P,P,N))
+Omega[1,2,] <- Omega[2,1,] <- -0.4 * sin(1:N/15) - s*0.6
+
+Sigma <- array(NA, dim = c(P,P,N))
+for(t in 1:N){
+  Sigma[,,t] <- solve(Omega[,,t])
+}
+
+Y <- array(NA, dim=c(N,P))
+for(t in 1:N){
+  Y[t,] <- MASS::mvrnorm(1, mu = rep(0,P), Sigma = Sigma[,,t])
+}
+
+temp <- data.frame(Y1 = Y[,1], Y2 = Y[,2], t = 1:N) %>% reshape2::melt(id.vars = "t")
+
+p1 <- ggplot() +
+  geom_rect(aes(xmin=c(26,76), xmax = c(50,100), 
+                ymin = c(-Inf,-Inf), ymax = c(Inf,Inf),
+                fill = "s(t) = 1"), alpha = 0.1) +
+  scale_fill_manual("", breaks = "s(t) = 1", values = "red") +
+  geom_line(data = temp, aes(x = t, y = value, color = variable)) +
+  labs(x = "(a)", y = "BOLD signal", color = "Region") +
+  ggthemes::theme_tufte()
+
+p2 <- ggplot() +
+  geom_rect(aes(xmin=c(26,76), xmax = c(50,100), 
+                ymin = c(-Inf,-Inf), ymax = c(Inf,Inf),
+                fill = "s(t) = 1"), alpha = 0.1) +
+  scale_fill_manual("", breaks = "s(t) = 1", values = "red") +
+  geom_line(aes(x = 1:N, y = -Omega[1,2,])) +
+  labs(x = "Time (s)\n(b)", y = "Correlation") +
+  coord_cartesian(ylim = c(-1,1)) +
+  ggthemes::theme_tufte()
+
+gridExtra::grid.arrange(p1, p2)
+
+to_plot <- gridExtra::arrangeGrob(p1, p2)
+
+ggsave(file="images/simulated_2_region.png", to_plot,
+       width = 10, height = 5)
+
+rm(p1, p2, temp, to_plot, Y, N, Omega, P, s, Sigma, t)
+```
+
+```{r}
+set.seed(123)
+P <- 5
+N <- 1000
+
+kappa = 1
+a <- 1
+xi <- rgamma(P, shape = a, rate = a*kappa/2)
+theta <- rgamma(P, shape = 1/2, rate = 1/2/xi)
+omega <- sapply(1:P, function(p){rnorm(N, 0, theta[p])})
+beta <- sapply(1:P, function(p){rnorm(1,0,theta[p]+0.1) + cumsum(omega[,p])})
+
+to_plot <- data.frame(beta = beta, t = 1:N)
+colnames(to_plot) <- c(sprintf("Beta_%s",1:P), "t")
+
+p1 <- 
+to_plot %>% reshape2::melt(id.vars = "t") %>% 
+  ggplot() +
+  geom_line(aes(x = t, y = value, color = variable)) +
+  ggthemes::theme_tufte() +
+  ggtitle("Samples of Beta with a_xi = 1 and kappa = 1") +
+  theme(legend.position = "None")
+
+kappa = 10
+a <- 10
+xi <- rgamma(P, shape = a, rate = a*kappa/2)
+theta <- rgamma(P, shape = 1/2, rate = 1/2/xi)
+omega <- sapply(1:P, function(p){rnorm(N, 0, theta[p])})
+beta <- sapply(1:P, function(p){rnorm(1,0,theta[p]+0.1) + cumsum(omega[,p])})
+
+to_plot <- data.frame(beta = beta, t = 1:N)
+colnames(to_plot) <- c(sprintf("Beta_%s",1:P), "t")
+
+p2 <- 
+to_plot %>% reshape2::melt(id.vars = "t") %>% 
+  ggplot() +
+  geom_line(aes(x = t, y = value, color = variable)) +
+  ggthemes::theme_tufte() +
+  ggtitle("Samples of Beta with a_xi = 10 and kappa = 10") +
+  theme(legend.position = "None")
+
+
+kappa = 20
+a <- 0.1
+xi <- rgamma(P, shape = a, rate = a*kappa/2)
+theta <- rgamma(P, shape = 1/2, rate = 1/2/xi)
+omega <- sapply(1:P, function(p){rnorm(N, 0, theta[p])})
+beta <- sapply(1:P, function(p){rnorm(1,0,theta[p]+0.1) + cumsum(omega[,p])})
+
+to_plot <- data.frame(beta = beta, t = 1:N)
+colnames(to_plot) <- c(sprintf("Beta_%s",1:P), "t")
+
+p3 <- 
+to_plot %>% reshape2::melt(id.vars = "t") %>% 
+  ggplot() +
+  geom_line(aes(x = t, y = value, color = variable)) +
+  ggthemes::theme_tufte() +
+  ggtitle("Samples of Beta with a_xi = 0.1 and kappa = 20") +
+  theme(legend.position = "None")
+
+ggpubr::ggarrange(plotlist = list(p1, p2, p3), nrow = 5)
+
+ggsave("images/double_gamma_samples.png", width = 8, height = 8)
+
+rm(beta, omega, p1, p2, p3, to_plot, a, kappa, N, P, theta, xi)
+```
+
+```{r}
+load("~/BTV-PPI/Simulation Results/data/Simulation_1_binary_stimulus.Rdata")
+
+stimulus <- data.frame(xmin = c(250,750), xmax = c(500,1000),
+                       ymin = c(-Inf, -Inf), ymax = c(Inf,Inf))
+
+ggplot() +
+    geom_line(aes(x = 1:1000, y = data$S1, color = "S(t)")) +
+    geom_rect(aes(xmin = xmin, xmax = xmax, 
+                ymin = ymin, ymax = ymax, 
+                fill = "Active Stimulus"), 
+            data = stimulus, alpha = 0.2) +
+    theme_minimal() +
+    scale_color_manual(values = c("S(t)" = "black")) +
+    labs(y = "Stimulus Strength", x = "t", fill = "", color = "")
+
+
+ggsave("images/simulation_binary_stimulus.png", width = 8, height = 4)
+
+rm(data, stimulus)
+```
+
+```{r}
+load("~/BTV-PPI/Simulation Results/Binary_stimulus_Omega.Rdata")
+
+gg_color_hue <- function(n) {
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+}
+
+indices <- list(c(1,13), c(4,7), c(1,2), c(13,14), c(10,11))
+
+plot_titles <- c("2 Regions with No Connectivity",
+                 "2 Regions with Only a PPI Effect",
+                 "2 Regions with Only a Constant Physiological Connection",
+                 "2 Regions with Only a Dynamic Physiological Connection",
+                 "2 Regions with a Dynamic Physiological Connection and a PPI Effect")
+
+stimulus <- data.frame(xmin = c(250,750), xmax = c(500,1000),
+                       ymin = c(-Inf, -Inf), ymax = c(Inf,Inf))
+
+data <- sapply(1:5, function(i){Omega[indices[[i]][1], indices[[i]][2],]})
+
+for(i in 1:5){
+  ggplot() +
+    geom_line(aes(x = 1:1000, y = Omega[indices[[i]][1], indices[[i]][2],])) +
+    geom_rect(aes(xmin = xmin, xmax = xmax, 
+                ymin = ymin, ymax = ymax, 
+                fill = "Active Stimulus"), 
+            data = stimulus, alpha = 0.2) +
+    theme_minimal() +
+    ggtitle(plot_titles[i]) +
+    labs(y = TeX("\\Omega Value"), x = "t", fill = "") +
+    coord_cartesian(ylim = c(-2,1))
+  
+  ggsave(sprintf("images/Omega_sitution_%s_binary_stimulus.png", i), width = 8, height = 4)
+}
+
+rm(indices, i, plot_titles, gg_color_hue, Omega, par_cor, Sigma, stimulus, data)
+```
+
+```{r}
+load("~/BTV-PPI/Simulation Results/partial_correlations/Simulation_1_par_cors_binary_stimulus.Rdata")
+
+stimulus <- data.frame(xmin = c(250,750), xmax = c(500,1000),
+                       ymin = c(-Inf, -Inf), ymax = c(Inf,Inf))
+
+index = c(13,14)
+
+data <- 
+  data.frame(par_cor_btvppi = result$par_cor_btvppi[index[1], index[2], ],
+             par_cor_btvppi_selection =
+               result$par_cor_btvppi_selection[index[1], index[2], ],
+             par_cor_gppi = -result$par_cor_gppi[index[1], index[2], ],
+             par_cor_splineppi = result$par_cor_splineppi[index[1], index[2], ],
+             true_par_cor = result$true_par_cor[index[1], index[2], ],
+           t = 1:1000) %>% 
+  reshape2::melt(id.vars = "t")
+
+
+ggplot() +
+  geom_line(aes(x = t, y = value, linetype = variable), data = data) +
+  geom_rect(aes(xmin = xmin, xmax = xmax, 
+            ymin = ymin, ymax = ymax, 
+            fill = "Active Stimulus"), 
+        data = stimulus, alpha = 0.2) +
+  theme_minimal() +
+  scale_linetype_manual(values = c(5, 4, 3, 2, 1),
+                        labels = 
+                          c("BTV-PPI", "BTV-PPI with selection", "gPPI", "Spline PPI", "Truth")) +
+  labs(y = "Partial Correlation", linetype = "", fill = "") +
+  coord_cartesian(ylim = c(-1,1)) +
+  ggtitle("Partial Correlation Between Regions \nwith Only a Dynamic Physiological Connection")
+  
+ggsave("images/Omega_results_situation_4_binary_stimulus.png", 
+       width = 8, height = 4)
+
+rm(data, stimulus, result, index)
+```
+
+Below I just plot the BTV-PPI with selection and Spline PPI to compare their relative accuracy.
+
+```{r}
+load("~/BTV-PPI/Simulation Results/partial_correlations/Simulation_1_par_cors_binary_stimulus.Rdata")
+
+stimulus <- data.frame(xmin = c(250,750), xmax = c(500,1000),
+                       ymin = c(-Inf, -Inf), ymax = c(Inf,Inf))
+
+index = c(13,14)
+
+data <- 
+  data.frame(par_cor_btvppi_selection =
+               result$par_cor_btvppi_selection[index[1], index[2], ],
+             par_cor_splineppi = result$par_cor_splineppi[index[1], index[2], ],
+             true_par_cor = result$true_par_cor[index[1], index[2], ],
+           t = 1:1000) %>% 
+  reshape2::melt(id.vars = "t")
+
+
+ggplot() +
+  geom_line(aes(x = t, y = value, linetype = variable), data = data) +
+  geom_rect(aes(xmin = xmin, xmax = xmax, 
+            ymin = ymin, ymax = ymax, 
+            fill = "Active Stimulus"), 
+        data = stimulus, alpha = 0.2) +
+  theme_minimal() +
+  scale_linetype_manual(values = c(3, 2, 1),
+                        labels = 
+                          c("BTV-PPI with selection", "Spline PPI", "Truth")) +
+  labs(y = "Partial Correlation", linetype = "", fill = "") +
+  coord_cartesian(ylim = c(-1,1)) +
+  ggtitle("Partial Correlation Between Regions \nwith Only a Dynamic Physiological Connection")
+
+index = c(10,11)
+
+data <- 
+  data.frame(par_cor_btvppi_selection =
+               result$par_cor_btvppi_selection[index[1], index[2], ],
+             par_cor_splineppi = result$par_cor_splineppi[index[1], index[2], ],
+             true_par_cor = result$true_par_cor[index[1], index[2], ],
+           t = 1:1000) %>% 
+  reshape2::melt(id.vars = "t")
+
+
+ggplot() +
+  geom_line(aes(x = t, y = value, linetype = variable), data = data) +
+  geom_rect(aes(xmin = xmin, xmax = xmax, 
+            ymin = ymin, ymax = ymax, 
+            fill = "Active Stimulus"), 
+        data = stimulus, alpha = 0.2) +
+  theme_minimal() +
+  scale_linetype_manual(values = c(3, 2, 1),
+                        labels = 
+                          c("BTV-PPI with selection", "Spline PPI", "Truth")) +
+  labs(y = "Partial Correlation", linetype = "", fill = "") +
+  coord_cartesian(ylim = c(-1,1)) +
+  ggtitle("Partial Correlation Between Regions \nwith a Dynamic Physiological Connection and a PPI Effect")
+
+rm(data, stimulus, result, index)
+```
+
+```{r}
+load("~/BTV-PPI/Simulation Results/partial_correlations/Simulation_1_par_cors_binary_stimulus.Rdata")
+
+stimulus <- data.frame(xmin = c(250,750), xmax = c(500,1000),
+                       ymin = c(-Inf, -Inf), ymax = c(Inf,Inf))
+
+index = c(10,11)
+
+data <- 
+  data.frame(par_cor_btvppi = result$par_cor_btvppi[index[1], index[2], ],
+             par_cor_btvppi_selection =
+               result$par_cor_btvppi_selection[index[1], index[2], ],
+             par_cor_gppi = -result$par_cor_gppi[index[1], index[2], ],
+             par_cor_splineppi = result$par_cor_splineppi[index[1], index[2], ],
+             true_par_cor = result$true_par_cor[index[1], index[2], ],
+           t = 1:1000) %>% 
+  reshape2::melt(id.vars = "t")
+
+ggplot() +
+  geom_line(aes(x = t, y = value, linetype = variable), data = data) +
+  geom_rect(aes(xmin = xmin, xmax = xmax, 
+            ymin = ymin, ymax = ymax, 
+            fill = "Active Stimulus"), 
+        data = stimulus, alpha = 0.2) +
+  theme_minimal() +
+  scale_linetype_manual(values = c(5, 4, 3, 2, 1),
+                        labels = 
+                          c("BTV-PPI", "BTV-PPI with selection", "gPPI", "Spline PPI", "Truth")) +
+  labs(y = "Partial Correlation", linetype = "", fill = "") +
+  coord_cartesian(ylim = c(-1,1)) +
+  ggtitle("Partial Correlation Between Regions \nwith a Dynamic Physiological Connection and a PPI Effect")
+  
+ggsave("images/Omega_results_situation_5_binary_stimulus.png", 
+       width = 8, height = 4)
+
+rm(data, stimulus, result, index)
+```
+
+Make all the static stimulus results together
+
+```{r}
+load("~/BTV-PPI/Simulation Results/partial_correlations/Simulation_1_par_cors_binary_stimulus.Rdata")
+
+stimulus <- data.frame(xmin = c(250,750), xmax = c(500,1000),
+                       ymin = c(-Inf, -Inf), ymax = c(Inf,Inf))
+
+situation_index <- list(c(1,13), c(4,7), c(1,2), c(13,14), c(10,11))
+situations <- c("No Connectivity","Only a PPI Effect",
+                "Time-invariant Physiological Connection",
+                "Varying Physiological Connection",
+                "Varying Physiological Connection and PPI Effect")
+
+plots <- vector(mode="list", length = 5)
+
+for(i in 1:5){
+  index <- situation_index[[i]]
+  data <- 
+    data.frame(par_cor_btvppi = result$par_cor_btvppi[index[1], index[2], ],
+               par_cor_btvppi_selection =
+                 result$par_cor_btvppi_selection[index[1], index[2], ],
+               par_cor_gppi = -result$par_cor_gppi[index[1], index[2], ],
+               par_cor_splineppi = result$par_cor_splineppi[index[1], index[2], ],
+               true_par_cor = result$true_par_cor[index[1], index[2], ],
+             t = 1:1000) %>% 
+    reshape2::melt(id.vars = "t")
+  
+  plots[[i]] <- 
+  ggplot() +
+  geom_line(aes(x = t, y = value, linetype = variable), data = data) +
+  geom_rect(aes(xmin = xmin, xmax = xmax, 
+            ymin = ymin, ymax = ymax, 
+            fill = "Active Stimulus"), 
+        data = stimulus, alpha = 0.3) +
+  ggthemes::theme_tufte() +
+  scale_linetype_manual(values = c(5, 4, 3, 2, 1),
+                        labels = 
+                          c("BTV-PPI", "BTV-PPI with selection", "gPPI", "Spline PPI", "Truth")) +
+  labs(y = "Partial Correlation", linetype = "", fill = "") +
+  coord_cartesian(ylim = c(-1,1)) +
+  ggtitle(situations[i])
+}
+
+ggpubr::ggarrange(plotlist = plots, nrow = 5)
+  
+ggsave("images/par_cor_results_all_together_binary_stimulus.png", 
+       width = 16, height = 16)
+
+rm(data, plots, result, situation_index, situations, stimulus, i, index)
+```
+
+Dynamic stimulus
+
+```{r}
+load("~/BTV-PPI/Simulation Results/partial_correlations/Simulation_1_par_cors_dynamic_stimulus.Rdata")
+
+situation_index <- list(c(1,13), c(4,7), c(1,2), c(13,14), c(10,11))
+situations <- c("No Connectivity","Only a PPI Effect",
+                "Time-invariant Physiological Connection",
+                "Varying Physiological Connection",
+                "Varying Physiological Connection and PPI Effect")
+
+plots <- vector(mode="list", length = 5)
+
+for(i in 1:5){
+  index <- situation_index[[i]]
+  data <- 
+      data.frame(par_cor_btvppi = result$par_cor_btvppi[index[1], index[2], ],
+                 par_cor_btvppi_selection =
+                   result$par_cor_btvppi_selection[index[1], index[2], ],
+                 par_cor_gppi = -result$par_cor_gppi[index[1], index[2], ],
+                 par_cor_splineppi = result$par_cor_splineppi[index[1], index[2], ],
+                 true_par_cor = result$true_par_cor[index[1], index[2], ],
+               t = 1:1000) %>% 
+      reshape2::melt(id.vars = "t")
+  
+  plots[[i]] <- 
+  ggplot() +
+  geom_line(aes(x = t, y = value, linetype = variable), data = data) +
+  ggthemes::theme_tufte() +
+  scale_linetype_manual(values = c(5, 4, 3, 2, 1),
+                          labels = 
+                            c("BTV-PPI", "BTV-PPI with selection", "gPPI", "Spline PPI", "Truth")) +
+  labs(y = "Partial Correlation", linetype = "", fill = "") +
+  coord_cartesian(ylim = c(-1,1)) +
+  ggtitle(situations[i])
+}
+
+ggpubr::ggarrange(plotlist = plots, nrow = 5)
+  
+ggsave("images/par_cor_results_all_together_dynamic_stimulus.png", 
+       width = 16, height = 16)
+
+rm(data, plots, result, situation_index, situations, i, index)
+```
+
+```{r}
+load("~/BTV-PPI/Simulation Results/data/Simulation_1_dynamic_stimulus.Rdata")
+
+ggplot() +
+  geom_line(aes(x = 1:1000, y = data$S1, color = "S(t)")) +
+  theme_minimal() +
+  scale_color_manual(values = c("S(t)" = "black")) +
+  labs(y = "Stimulus Strength", x = "t", color = "", fill = "")
+
+ggsave("images/simulation_dynamic_stimulus.png", width = 8, height = 4)
+
+rm(data)
+```
+
+Below I just plot the BTV-PPI and Spline PPI together to compare their performance.
+
+```{r}
+load("~/BTV-PPI/Simulation Results/partial_correlations/Simulation_1_par_cors_dynamic_stimulus.Rdata")
+
+index = c(13,14)
+
+data <- 
+  data.frame(par_cor_btvppi_selection =
+               result$par_cor_btvppi_selection[index[1], index[2], ],
+             par_cor_splineppi = result$par_cor_splineppi[index[1], index[2], ],
+             true_par_cor = result$true_par_cor[index[1], index[2], ],
+           t = 1:1000) %>% 
+  reshape2::melt(id.vars = "t")
+
+
+ggplot() +
+  geom_line(aes(x = t, y = value, linetype = variable), data = data) +
+  theme_minimal() +
+  scale_linetype_manual(values = c(3, 2, 1),
+                        labels = 
+                          c("BTV-PPI with selection", "Spline PPI", "Truth")) +
+  labs(y = "Partial Correlation", linetype = "", fill = "") +
+  coord_cartesian(ylim = c(-1,1)) +
+  ggtitle("Partial Correlation Between Regions \nwith Only a Dynamic Physiological Connection")
+
+index = c(10,11)
+
+data <- 
+  data.frame(par_cor_btvppi_selection =
+               result$par_cor_btvppi_selection[index[1], index[2], ],
+             par_cor_splineppi = result$par_cor_splineppi[index[1], index[2], ],
+             true_par_cor = result$true_par_cor[index[1], index[2], ],
+           t = 1:1000) %>% 
+  reshape2::melt(id.vars = "t")
+
+
+ggplot() +
+  geom_line(aes(x = t, y = value, linetype = variable), data = data) +
+  theme_minimal() +
+  scale_linetype_manual(values = c(3, 2, 1),
+                        labels = 
+                          c("BTV-PPI with selection", "Spline PPI", "Truth")) +
+  labs(y = "Partial Correlation", linetype = "", fill = "") +
+  coord_cartesian(ylim = c(-1,1)) +
+  ggtitle("Partial Correlation Between Regions \nwith a Dynamic Physiological Connection and a PPI Effect")
+
+rm(data, stimulus, result, index)
+```
